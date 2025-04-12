@@ -37,6 +37,14 @@ if 'pause_ticks' not in st.session_state:
     st.session_state.pause_ticks = 2  # number of ticks to pause at peaks
 if 'voltage_per_tick' not in st.session_state:
     st.session_state.voltage_per_tick = 1.0  # voltage change per tick
+    
+# View state preservation
+if 'view_state' not in st.session_state:
+    st.session_state.view_state = {
+        'time_window': (0, 10.0),
+        'voltage_range': (-16.0, 16.0),
+        'autoscale_options': 'Fixed Range'
+    }
 
 # Function to reset the generator
 def reset_generator():
@@ -186,6 +194,19 @@ fig.update_layout(
     ),
     margin=dict(l=20, r=20, t=50, b=20),
     height=500,
+    # Add modebar buttons and configuration for better zoom/pan experience
+    modebar_add_buttons=[
+        'zoom',
+        'pan', 
+        'zoomIn', 
+        'zoomOut', 
+        'resetScale',
+        'toImage'
+    ],
+    modebar_orientation='v',
+    modebar_bgcolor='rgba(255, 255, 255, 0.7)',
+    # Make the plot interactive with drag mode set to pan
+    dragmode='pan'
 )
 
 # Add reference lines at -15V and +15V
@@ -212,8 +233,80 @@ if st.session_state.running and not st.session_state.data.empty:
         showlegend=False
     ))
 
-# Display the plot
-st.plotly_chart(fig, use_container_width=True)
+# Add custom view control options
+st.subheader("Visualization Controls")
+view_col1, view_col2, view_col3 = st.columns(3)
+
+# Helper function to update view state
+def update_view_state(key, value):
+    st.session_state.view_state[key] = value
+
+# Time window control
+with view_col1:
+    if not st.session_state.data.empty:
+        max_time = max(st.session_state.data['time'].tolist())
+        min_time = 0
+        # Use the saved view state for initial value
+        time_window = st.slider(
+            "Time Window (seconds)",
+            min_value=min_time,
+            max_value=max(10.0, max_time),
+            value=st.session_state.view_state['time_window'],
+            help="Adjust the visible time range",
+            on_change=update_view_state,
+            args=('time_window',),
+            key="time_window_slider"
+        )
+        st.session_state.view_state['time_window'] = time_window
+        # Update x-axis range based on slider
+        fig.update_layout(xaxis=dict(range=time_window))
+
+# Voltage range control
+with view_col2:
+    # Use the saved view state for initial value
+    voltage_range = st.slider(
+        "Voltage Range",
+        min_value=-20.0,
+        max_value=20.0,
+        value=st.session_state.view_state['voltage_range'],
+        help="Adjust the visible voltage range",
+        on_change=update_view_state,
+        args=('voltage_range',),
+        key="voltage_range_slider"
+    )
+    st.session_state.view_state['voltage_range'] = voltage_range
+    # Update y-axis range based on slider
+    fig.update_layout(yaxis=dict(range=voltage_range))
+
+# Auto-scale options
+with view_col3:
+    # Use the saved view state for initial value
+    autoscale_options = st.radio(
+        "Auto-scale Options",
+        ["Fixed Range", "Auto-scale X", "Auto-scale Y", "Auto-scale Both"],
+        index=["Fixed Range", "Auto-scale X", "Auto-scale Y", "Auto-scale Both"].index(st.session_state.view_state['autoscale_options']),
+        help="Choose how the chart scales",
+        on_change=update_view_state,
+        args=('autoscale_options',),
+        key="autoscale_options_radio"
+    )
+    st.session_state.view_state['autoscale_options'] = autoscale_options
+    
+    # Apply auto-scaling based on selection
+    if autoscale_options == "Auto-scale X":
+        fig.update_layout(xaxis=dict(autorange=True), yaxis=dict(range=voltage_range))
+    elif autoscale_options == "Auto-scale Y":
+        fig.update_layout(xaxis=dict(range=time_window), yaxis=dict(autorange=True))
+    elif autoscale_options == "Auto-scale Both":
+        fig.update_layout(xaxis=dict(autorange=True), yaxis=dict(autorange=True))
+    # "Fixed Range" uses the ranges set by the sliders
+
+# Display the plot with improved configuration
+st.plotly_chart(fig, use_container_width=True, config={
+    'scrollZoom': True,
+    'displaylogo': False,
+    'modeBarButtonsToAdd': ['drawopenpath', 'eraseshape']
+})
 
 # Parameter Information
 st.subheader("Wave Parameters Info")
@@ -269,8 +362,19 @@ def update_wave_data():
     
     st.session_state.data = pd.concat([st.session_state.data, new_data], ignore_index=True)
 
+# Use a container for the updatable content to prevent scroll reset
+if 'update_container' not in st.session_state:
+    st.session_state.update_container = st.empty()
+
+# Make the app update only when necessary
+if 'last_update_time' not in st.session_state:
+    st.session_state.last_update_time = time.time()
+
 # Main loop to update the wave if running
 if st.session_state.running:
-    update_wave_data()
-    time.sleep(st.session_state.tick_duration)  # Sleep for configured tick duration
-    st.rerun()  # Rerun the app to update the UI
+    # Only update at the tick rate to prevent constant refreshing
+    current_time = time.time()
+    if current_time - st.session_state.last_update_time >= st.session_state.tick_duration:
+        update_wave_data()
+        st.session_state.last_update_time = current_time
+        st.rerun()  # Rerun the app to update the UI but maintain scroll position
