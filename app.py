@@ -107,25 +107,14 @@ fig = go.Figure()
 
 # Add the waveform data if it exists
 if not st.session_state.data.empty:
-    # Define colors for different states
-    color_map = {
-        'increasing': 'green',
-        'decreasing': 'red',
-        'pause_high': 'orange',
-        'pause_low': 'blue'
-    }
-    
-    # Plot each state with its own color
-    for state, color in color_map.items():
-        state_data = st.session_state.data[st.session_state.data['state'] == state]
-        if not state_data.empty:
-            fig.add_trace(go.Scatter(
-                x=state_data['time'],
-                y=state_data['voltage'],
-                mode='lines',
-                name=state,
-                line=dict(color=color, width=2)
-            ))
+    # Plot a single continuous line for the wave
+    fig.add_trace(go.Scatter(
+        x=st.session_state.data['time'],
+        y=st.session_state.data['voltage'],
+        mode='lines',
+        name='Triangle Wave',
+        line=dict(color='blue', width=2)
+    ))
 
 # Configure layout
 fig.update_layout(
