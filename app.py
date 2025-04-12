@@ -236,20 +236,20 @@ def update_view_state(key, value):
 
 # Initialize time_window and max_time variables to handle empty data case
 time_window = st.session_state.view_state['time_window']
-min_time = 0
+min_time = 0.0  # Use float instead of int
 max_time = 10.0
 
 # Time window control
 with view_col1:
     if not st.session_state.data.empty:
-        max_time = max(st.session_state.data['time'].tolist())
+        max_time = max(max(st.session_state.data['time'].tolist()), 10.0)
     
-    # Use the saved view state for initial value
+    # Use the saved view state for initial value, ensuring all values are float
     time_window = st.slider(
         "Time Window (seconds)",
-        min_value=min_time,
-        max_value=max(10.0, max_time),
-        value=st.session_state.view_state['time_window'],
+        min_value=float(min_time),
+        max_value=float(max_time),
+        value=(float(time_window[0]), float(time_window[1])) if isinstance(time_window, (list, tuple)) else (0.0, float(max_time)),
         help="Adjust the visible time range",
         on_change=update_view_state,
         args=('time_window',),
@@ -261,12 +261,14 @@ with view_col1:
 
 # Voltage range control
 with view_col2:
-    # Use the saved view state for initial value
+    # Use the saved view state for initial value, ensuring all values are float
     voltage_range = st.slider(
         "Voltage Range",
         min_value=-20.0,
         max_value=20.0,
-        value=st.session_state.view_state['voltage_range'],
+        value=(float(st.session_state.view_state['voltage_range'][0]), float(st.session_state.view_state['voltage_range'][1])) 
+              if isinstance(st.session_state.view_state['voltage_range'], (list, tuple)) 
+              else (-16.0, 16.0),
         help="Adjust the visible voltage range",
         on_change=update_view_state,
         args=('voltage_range',),
