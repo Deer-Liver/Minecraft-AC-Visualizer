@@ -29,6 +29,14 @@ if 'state' not in st.session_state:
     st.session_state.state = 'increasing'
 if 'pause_counter' not in st.session_state:
     st.session_state.pause_counter = 0
+    
+# User-configurable parameters
+if 'tick_duration' not in st.session_state:
+    st.session_state.tick_duration = 0.1  # in seconds
+if 'pause_ticks' not in st.session_state:
+    st.session_state.pause_ticks = 2  # number of ticks to pause at peaks
+if 'voltage_per_tick' not in st.session_state:
+    st.session_state.voltage_per_tick = 1.0  # voltage change per tick
 
 # Function to reset the generator
 def reset_generator():
@@ -54,8 +62,44 @@ def toggle_generator():
 st.title("📈 Triangle Wave Generator")
 st.markdown("""
 This application generates a triangle wave signal that oscillates between -15V and +15V.
-The wave increases and decreases linearly at a rate of 1 unit per 0.1 second, with pauses at peaks and troughs.
+The wave increases and decreases linearly with configurable timing and voltage rate settings.
+You can adjust the tick duration, pause length, and voltage change rate using the settings below.
 """)
+
+# Parameters section
+st.subheader("Wave Parameter Settings")
+params_col1, params_col2, params_col3 = st.columns(3)
+
+# Only allow changing parameters when the generator is stopped
+with params_col1:
+    st.number_input("Tick Duration (seconds)", 
+                   min_value=0.01, 
+                   max_value=1.0, 
+                   value=st.session_state.tick_duration,
+                   step=0.01,
+                   key="tick_duration",
+                   disabled=st.session_state.running,
+                   help="Duration of one tick in seconds")
+
+with params_col2:
+    st.number_input("Pause Duration (ticks)", 
+                   min_value=1, 
+                   max_value=10, 
+                   value=st.session_state.pause_ticks,
+                   step=1,
+                   key="pause_ticks",
+                   disabled=st.session_state.running,
+                   help="Number of ticks to pause at peaks and troughs")
+
+with params_col3:
+    st.number_input("Voltage Change per Tick", 
+                   min_value=0.1, 
+                   max_value=5.0, 
+                   value=st.session_state.voltage_per_tick,
+                   step=0.1,
+                   key="voltage_per_tick",
+                   disabled=st.session_state.running,
+                   help="Amount of voltage to change per tick")
 
 # Control panel
 st.subheader("Controls")
@@ -94,8 +138,9 @@ with metric_col3:
 
 with metric_col4:
     if st.session_state.state.startswith('pause'):
-        pause_remaining = 0.2 - (st.session_state.pause_counter * 0.1)
-        st.metric(label="Pause Remaining", value=f"{pause_remaining:.1f}s")
+        ticks_remaining = st.session_state.pause_ticks - st.session_state.pause_counter
+        time_remaining = ticks_remaining * st.session_state.tick_duration
+        st.metric(label="Pause Remaining", value=f"{time_remaining:.2f}s ({ticks_remaining} ticks)")
     else:
         st.metric(label="Pause Remaining", value="N/A")
 
@@ -170,13 +215,13 @@ if st.session_state.running and not st.session_state.data.empty:
 # Display the plot
 st.plotly_chart(fig, use_container_width=True)
 
-# Information section
-st.subheader("Wave Parameters")
-st.markdown("""
+# Parameter Information
+st.subheader("Wave Parameters Info")
+st.markdown(f"""
 - **Amplitude Range**: -15V to +15V
-- **Time Resolution**: 0.1 seconds per tick
-- **Pause Duration**: 0.2 seconds (2 ticks) at peaks and troughs
-- **Rise/Fall Rate**: 1 volt per tick
+- **Time Resolution**: {st.session_state.tick_duration} seconds per tick
+- **Pause Duration**: {st.session_state.pause_ticks} ticks at peaks and troughs ({st.session_state.pause_ticks * st.session_state.tick_duration:.2f} seconds)
+- **Rise/Fall Rate**: {st.session_state.voltage_per_tick} volts per tick
 """)
 
 # Function to update wave data
@@ -185,12 +230,12 @@ def update_wave_data():
     if st.session_state.start_time is None:
         st.session_state.start_time = current_time
     
-    # Calculate elapsed time
-    st.session_state.elapsed_time = (len(st.session_state.data) * 0.1) if not st.session_state.data.empty else 0
+    # Calculate elapsed time based on tick duration
+    st.session_state.elapsed_time = (len(st.session_state.data) * st.session_state.tick_duration) if not st.session_state.data.empty else 0
     
     # Update voltage based on current state
     if st.session_state.state == 'increasing':
-        st.session_state.voltage += 1
+        st.session_state.voltage += st.session_state.voltage_per_tick
         if st.session_state.voltage >= 15:
             st.session_state.voltage = 15
             st.session_state.state = 'pause_high'
@@ -198,12 +243,12 @@ def update_wave_data():
     
     elif st.session_state.state == 'pause_high':
         st.session_state.pause_counter += 1
-        if st.session_state.pause_counter >= 2:  # 2 ticks of 0.1s = 0.2s pause
+        if st.session_state.pause_counter >= st.session_state.pause_ticks:
             st.session_state.state = 'decreasing'
             st.session_state.pause_counter = 0
     
     elif st.session_state.state == 'decreasing':
-        st.session_state.voltage -= 1
+        st.session_state.voltage -= st.session_state.voltage_per_tick
         if st.session_state.voltage <= -15:
             st.session_state.voltage = -15
             st.session_state.state = 'pause_low'
@@ -211,7 +256,7 @@ def update_wave_data():
     
     elif st.session_state.state == 'pause_low':
         st.session_state.pause_counter += 1
-        if st.session_state.pause_counter >= 2:  # 2 ticks of 0.1s = 0.2s pause
+        if st.session_state.pause_counter >= st.session_state.pause_ticks:
             st.session_state.state = 'increasing'
             st.session_state.pause_counter = 0
     
@@ -227,5 +272,5 @@ def update_wave_data():
 # Main loop to update the wave if running
 if st.session_state.running:
     update_wave_data()
-    time.sleep(0.1)  # Sleep for 0.1 seconds to simulate the tick
+    time.sleep(st.session_state.tick_duration)  # Sleep for configured tick duration
     st.rerun()  # Rerun the app to update the UI
