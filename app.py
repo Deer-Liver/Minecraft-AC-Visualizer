@@ -230,9 +230,15 @@ if st.session_state.running and not st.session_state.data.empty:
 st.subheader("Visualization Controls")
 view_col1, view_col2, view_col3 = st.columns(3)
 
-# Helper function to update view state
-def update_view_state(key, value):
-    st.session_state.view_state[key] = value
+# Helper functions to update view state
+def update_time_window():
+    st.session_state.view_state['time_window'] = st.session_state.time_window_slider
+
+def update_voltage_range():
+    st.session_state.view_state['voltage_range'] = st.session_state.voltage_range_slider
+
+def update_autoscale():
+    st.session_state.view_state['autoscale_options'] = st.session_state.autoscale_options_radio
 
 # Initialize time_window and max_time variables to handle empty data case
 time_window = st.session_state.view_state['time_window']
@@ -251,11 +257,9 @@ with view_col1:
         max_value=float(max_time),
         value=(float(time_window[0]), float(time_window[1])) if isinstance(time_window, (list, tuple)) else (0.0, float(max_time)),
         help="Adjust the visible time range",
-        on_change=update_view_state,
-        args=('time_window',),
+        on_change=update_time_window,
         key="time_window_slider"
     )
-    st.session_state.view_state['time_window'] = time_window
     # Update x-axis range based on slider
     fig.update_layout(xaxis=dict(range=time_window))
 
@@ -270,11 +274,9 @@ with view_col2:
               if isinstance(st.session_state.view_state['voltage_range'], (list, tuple)) 
               else (-16.0, 16.0),
         help="Adjust the visible voltage range",
-        on_change=update_view_state,
-        args=('voltage_range',),
+        on_change=update_voltage_range,
         key="voltage_range_slider"
     )
-    st.session_state.view_state['voltage_range'] = voltage_range
     # Update y-axis range based on slider
     fig.update_layout(yaxis=dict(range=voltage_range))
 
@@ -286,11 +288,9 @@ with view_col3:
         ["Fixed Range", "Auto-scale X", "Auto-scale Y", "Auto-scale Both"],
         index=["Fixed Range", "Auto-scale X", "Auto-scale Y", "Auto-scale Both"].index(st.session_state.view_state['autoscale_options']),
         help="Choose how the chart scales",
-        on_change=update_view_state,
-        args=('autoscale_options',),
+        on_change=update_autoscale,
         key="autoscale_options_radio"
     )
-    st.session_state.view_state['autoscale_options'] = autoscale_options
     
     # Apply auto-scaling based on selection
     if autoscale_options == "Auto-scale X":
