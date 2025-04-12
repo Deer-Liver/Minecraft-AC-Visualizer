@@ -194,30 +194,23 @@ fig.update_layout(
     ),
     margin=dict(l=20, r=20, t=50, b=20),
     height=500,
-    # Add modebar buttons and configuration for better zoom/pan experience
-    modebar_add_buttons=[
-        'zoom',
-        'pan', 
-        'zoomIn', 
-        'zoomOut', 
-        'resetScale',
-        'toImage'
-    ],
-    modebar_orientation='v',
-    modebar_bgcolor='rgba(255, 255, 255, 0.7)',
     # Make the plot interactive with drag mode set to pan
     dragmode='pan'
 )
 
 # Add reference lines at -15V and +15V
+x1_value = 10.0
+if not st.session_state.data.empty:
+    x1_value = max(max(st.session_state.data['time'].tolist()), 10.0)
+
 fig.add_shape(
     type="line",
-    x0=0, y0=-15, x1=max(st.session_state.data['time'].tolist() + [10]), y1=-15,
+    x0=0, y0=-15, x1=x1_value, y1=-15,
     line=dict(color="rgba(0,0,255,0.3)", width=1, dash="dash")
 )
 fig.add_shape(
     type="line",
-    x0=0, y0=15, x1=max(st.session_state.data['time'].tolist() + [10]), y1=15,
+    x0=0, y0=15, x1=x1_value, y1=15,
     line=dict(color="rgba(255,0,0,0.3)", width=1, dash="dash")
 )
 
@@ -241,25 +234,30 @@ view_col1, view_col2, view_col3 = st.columns(3)
 def update_view_state(key, value):
     st.session_state.view_state[key] = value
 
+# Initialize time_window and max_time variables to handle empty data case
+time_window = st.session_state.view_state['time_window']
+min_time = 0
+max_time = 10.0
+
 # Time window control
 with view_col1:
     if not st.session_state.data.empty:
         max_time = max(st.session_state.data['time'].tolist())
-        min_time = 0
-        # Use the saved view state for initial value
-        time_window = st.slider(
-            "Time Window (seconds)",
-            min_value=min_time,
-            max_value=max(10.0, max_time),
-            value=st.session_state.view_state['time_window'],
-            help="Adjust the visible time range",
-            on_change=update_view_state,
-            args=('time_window',),
-            key="time_window_slider"
-        )
-        st.session_state.view_state['time_window'] = time_window
-        # Update x-axis range based on slider
-        fig.update_layout(xaxis=dict(range=time_window))
+    
+    # Use the saved view state for initial value
+    time_window = st.slider(
+        "Time Window (seconds)",
+        min_value=min_time,
+        max_value=max(10.0, max_time),
+        value=st.session_state.view_state['time_window'],
+        help="Adjust the visible time range",
+        on_change=update_view_state,
+        args=('time_window',),
+        key="time_window_slider"
+    )
+    st.session_state.view_state['time_window'] = time_window
+    # Update x-axis range based on slider
+    fig.update_layout(xaxis=dict(range=time_window))
 
 # Voltage range control
 with view_col2:
