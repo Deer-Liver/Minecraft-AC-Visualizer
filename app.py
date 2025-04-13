@@ -9,7 +9,7 @@ from datetime import datetime
 from pydub import AudioSegment
 from pydub.generators import Sine
 
-# Set page configuration
+# Configure the page
 st.set_page_config(
     page_title="Triangle Wave Generator",
     page_icon="📈",
@@ -37,8 +37,8 @@ if 'play_audio' not in st.session_state:
     st.session_state.play_audio = False
 if 'audio_frequency' not in st.session_state:
     st.session_state.audio_frequency = 440  # Default frequency in Hz
-if 'container_created' not in st.session_state:
-    st.session_state.container_created = False
+if 'plot_id' not in st.session_state:
+    st.session_state.plot_id = 0
     
 # User-configurable parameters
 if 'tick_duration' not in st.session_state:
@@ -121,6 +121,7 @@ def reset_generator():
     st.session_state.direction = 'up'
     st.session_state.state = 'increasing'
     st.session_state.pause_counter = 0
+    st.session_state.plot_id += 1  # Increment plot ID to ensure regeneration
 
 # Function to toggle the generator's running state
 def toggle_generator():
@@ -130,6 +131,120 @@ def toggle_generator():
         st.session_state.running = True
         if st.session_state.start_time is None:
             st.session_state.start_time = datetime.now()
+
+# Function to update wave data
+def update_wave_data():
+    current_time = datetime.now()
+    if st.session_state.start_time is None:
+        st.session_state.start_time = current_time
+    
+    # Calculate elapsed time based on tick duration
+    st.session_state.elapsed_time = (len(st.session_state.data) * st.session_state.tick_duration) if not st.session_state.data.empty else 0
+    
+    # Update voltage based on current state
+    if st.session_state.state == 'increasing':
+        st.session_state.voltage += st.session_state.voltage_per_tick
+        if st.session_state.voltage >= 15:
+            st.session_state.voltage = 15
+            st.session_state.state = 'pause_high'
+            st.session_state.pause_counter = 0
+    
+    elif st.session_state.state == 'pause_high':
+        st.session_state.pause_counter += 1
+        if st.session_state.pause_counter >= st.session_state.pause_ticks:
+            st.session_state.state = 'decreasing'
+            st.session_state.pause_counter = 0
+    
+    elif st.session_state.state == 'decreasing':
+        st.session_state.voltage -= st.session_state.voltage_per_tick
+        if st.session_state.voltage <= -15:
+            st.session_state.voltage = -15
+            st.session_state.state = 'pause_low'
+            st.session_state.pause_counter = 0
+    
+    elif st.session_state.state == 'pause_low':
+        st.session_state.pause_counter += 1
+        if st.session_state.pause_counter >= st.session_state.pause_ticks:
+            st.session_state.state = 'increasing'
+            st.session_state.pause_counter = 0
+    
+    # Add new data point
+    new_data = pd.DataFrame({
+        'time': [st.session_state.elapsed_time],
+        'voltage': [st.session_state.voltage],
+        'state': [st.session_state.state]
+    })
+    
+    st.session_state.data = pd.concat([st.session_state.data, new_data], ignore_index=True)
+
+# Create a function to plot the waveform
+def plot_waveform():
+    # Create plot
+    fig = go.Figure()
+
+    # Add the waveform data if it exists
+    if not st.session_state.data.empty:
+        # Plot a single continuous line for the wave
+        fig.add_trace(go.Scatter(
+            x=st.session_state.data['time'],
+            y=st.session_state.data['voltage'],
+            mode='lines',
+            name='Triangle Wave',
+            line=dict(color='blue', width=2)
+        ))
+
+    # Configure layout
+    fig.update_layout(
+        title="Triangle Wave",
+        xaxis_title="Time (seconds)",
+        yaxis_title="Voltage (V)",
+        xaxis=dict(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='lightgray',
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='lightgray',
+            range=[-16, 16]  # Set y-axis limits just beyond our voltage range
+        ),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        ),
+        margin=dict(l=20, r=20, t=50, b=20),
+        height=500,
+    )
+
+    # Add reference lines at -15V and +15V
+    fig.add_shape(
+        type="line",
+        x0=0, y0=-15, x1=max(st.session_state.data['time'].tolist() + [10]), y1=-15,
+        line=dict(color="rgba(0,0,255,0.3)", width=1, dash="dash")
+    )
+    fig.add_shape(
+        type="line",
+        x0=0, y0=15, x1=max(st.session_state.data['time'].tolist() + [10]), y1=15,
+        line=dict(color="rgba(255,0,0,0.3)", width=1, dash="dash")
+    )
+
+    # Add the current point as a dot if the generator is running
+    if st.session_state.running and not st.session_state.data.empty:
+        last_time = st.session_state.data['time'].iloc[-1]
+        last_voltage = st.session_state.data['voltage'].iloc[-1]
+        fig.add_trace(go.Scatter(
+            x=[last_time],
+            y=[last_voltage],
+            mode='markers',
+            marker=dict(color='black', size=10),
+            showlegend=False
+        ))
+
+    return fig
 
 # Main title and description
 st.title("📈 Triangle Wave Generator")
@@ -220,166 +335,47 @@ with metric_col4:
 # Visualization
 st.subheader("Waveform Visualization")
 
-# Use containers to maintain scroll position
-if not st.session_state.container_created:
-    # On first run, create the containers
-    st.session_state.main_container = st.container()
-    st.session_state.audio_container = st.container()
-    st.session_state.info_container = st.container()
-    st.session_state.container_created = True
-
-with st.session_state.main_container:
-    # Create plot
-    fig = go.Figure()
-
-    # Add the waveform data if it exists
-    if not st.session_state.data.empty:
-        # Plot a single continuous line for the wave
-        fig.add_trace(go.Scatter(
-            x=st.session_state.data['time'],
-            y=st.session_state.data['voltage'],
-            mode='lines',
-            name='Triangle Wave',
-            line=dict(color='blue', width=2)
-        ))
-
-    # Configure layout
-    fig.update_layout(
-        title="Triangle Wave",
-        xaxis_title="Time (seconds)",
-        yaxis_title="Voltage (V)",
-        xaxis=dict(
-            showgrid=True,
-            gridwidth=1,
-            gridcolor='lightgray',
-        ),
-        yaxis=dict(
-            showgrid=True,
-            gridwidth=1,
-            gridcolor='lightgray',
-            range=[-16, 16]  # Set y-axis limits just beyond our voltage range
-        ),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        ),
-        margin=dict(l=20, r=20, t=50, b=20),
-        height=500,
-    )
-
-    # Add reference lines at -15V and +15V
-    fig.add_shape(
-        type="line",
-        x0=0, y0=-15, x1=max(st.session_state.data['time'].tolist() + [10]), y1=-15,
-        line=dict(color="rgba(0,0,255,0.3)", width=1, dash="dash")
-    )
-    fig.add_shape(
-        type="line",
-        x0=0, y0=15, x1=max(st.session_state.data['time'].tolist() + [10]), y1=15,
-        line=dict(color="rgba(255,0,0,0.3)", width=1, dash="dash")
-    )
-
-    # Add the current point as a dot if the generator is running
-    if st.session_state.running and not st.session_state.data.empty:
-        last_time = st.session_state.data['time'].iloc[-1]
-        last_voltage = st.session_state.data['voltage'].iloc[-1]
-        fig.add_trace(go.Scatter(
-            x=[last_time],
-            y=[last_voltage],
-            mode='markers',
-            marker=dict(color='black', size=10),
-            showlegend=False
-        ))
-
-    # Display the plot
-    st.plotly_chart(fig, use_container_width=True)
+# Use placeholder to consistently show the chart at the same location
+waveform_placeholder = st.empty()
+with waveform_placeholder.container():
+    st.plotly_chart(plot_waveform(), use_container_width=True)
 
 # Audio playback controls
-with st.session_state.audio_container:
-    st.subheader("Audio Playback")
-    audio_col1, audio_col2, audio_col3 = st.columns([1, 1, 2])
-    
-    with audio_col1:
-        if st.button("Generate Audio", use_container_width=True):
-            st.session_state.play_audio = True
-    
-    with audio_col2:
-        st.session_state.audio_frequency = st.number_input(
-            "Base Frequency (Hz)", 
-            min_value=220, 
-            max_value=880, 
-            value=440, 
-            step=10,
-            help="Base pitch of the audio (A4 = 440Hz)")
-    
-    with audio_col3:
-        if st.session_state.play_audio and len(st.session_state.data) > 5:
-            # Generate audio from wave data
-            audio_segment = generate_audio(st.session_state.data)
-            if audio_segment:
-                # Display the audio player
-                st.markdown(get_audio_html(audio_segment), unsafe_allow_html=True)
-                st.caption("Audio simulates the voltage as pitch variations")
-        else:
-            st.info("Click 'Generate Audio' to hear the wave pattern. Start the generator first to create wave data.")
+st.subheader("Audio Playback")
+audio_col1, audio_col2, audio_placeholder = st.columns([1, 1, 2])
+
+with audio_col1:
+    if st.button("Generate Audio", use_container_width=True):
+        st.session_state.play_audio = True
+
+with audio_col2:
+    st.session_state.audio_frequency = st.number_input(
+        "Base Frequency (Hz)", 
+        min_value=220, 
+        max_value=880, 
+        value=440, 
+        step=10,
+        help="Base pitch of the audio (A4 = 440Hz)")
+
+with audio_placeholder:
+    if st.session_state.play_audio and len(st.session_state.data) > 5:
+        # Generate audio from wave data
+        audio_segment = generate_audio(st.session_state.data)
+        if audio_segment:
+            # Display the audio player
+            st.markdown(get_audio_html(audio_segment), unsafe_allow_html=True)
+            st.caption("Audio simulates the voltage as pitch variations")
+    else:
+        st.info("Click 'Generate Audio' to hear the wave pattern. Start the generator first to create wave data.")
 
 # Parameter Information
-with st.session_state.info_container:
-    st.subheader("Wave Parameters Info")
-    st.markdown(f"""
-    - **Amplitude Range**: -15V to +15V
-    - **Time Resolution**: {st.session_state.tick_duration} seconds per tick
-    - **Pause Duration**: {st.session_state.pause_ticks} ticks at peaks and troughs ({st.session_state.pause_ticks * st.session_state.tick_duration:.2f} seconds)
-    - **Rise/Fall Rate**: {st.session_state.voltage_per_tick} volts per tick
-    """)
-
-# Function to update wave data
-def update_wave_data():
-    current_time = datetime.now()
-    if st.session_state.start_time is None:
-        st.session_state.start_time = current_time
-    
-    # Calculate elapsed time based on tick duration
-    st.session_state.elapsed_time = (len(st.session_state.data) * st.session_state.tick_duration) if not st.session_state.data.empty else 0
-    
-    # Update voltage based on current state
-    if st.session_state.state == 'increasing':
-        st.session_state.voltage += st.session_state.voltage_per_tick
-        if st.session_state.voltage >= 15:
-            st.session_state.voltage = 15
-            st.session_state.state = 'pause_high'
-            st.session_state.pause_counter = 0
-    
-    elif st.session_state.state == 'pause_high':
-        st.session_state.pause_counter += 1
-        if st.session_state.pause_counter >= st.session_state.pause_ticks:
-            st.session_state.state = 'decreasing'
-            st.session_state.pause_counter = 0
-    
-    elif st.session_state.state == 'decreasing':
-        st.session_state.voltage -= st.session_state.voltage_per_tick
-        if st.session_state.voltage <= -15:
-            st.session_state.voltage = -15
-            st.session_state.state = 'pause_low'
-            st.session_state.pause_counter = 0
-    
-    elif st.session_state.state == 'pause_low':
-        st.session_state.pause_counter += 1
-        if st.session_state.pause_counter >= st.session_state.pause_ticks:
-            st.session_state.state = 'increasing'
-            st.session_state.pause_counter = 0
-    
-    # Add new data point
-    new_data = pd.DataFrame({
-        'time': [st.session_state.elapsed_time],
-        'voltage': [st.session_state.voltage],
-        'state': [st.session_state.state]
-    })
-    
-    st.session_state.data = pd.concat([st.session_state.data, new_data], ignore_index=True)
+st.subheader("Wave Parameters Info")
+st.markdown(f"""
+- **Amplitude Range**: -15V to +15V
+- **Time Resolution**: {st.session_state.tick_duration} seconds per tick
+- **Pause Duration**: {st.session_state.pause_ticks} ticks at peaks and troughs ({st.session_state.pause_ticks * st.session_state.tick_duration:.2f} seconds)
+- **Rise/Fall Rate**: {st.session_state.voltage_per_tick} volts per tick
+""")
 
 # Main loop to update the wave if running
 if st.session_state.running:
